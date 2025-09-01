@@ -1,176 +1,252 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, filedialog, messagebox
 import requests
 import threading
 import time
 import random
+from concurrent.futures import ThreadPoolExecutor
+import os
 
-# Common admin panel paths
-COMMON_ADMIN_PATHS = [
-    'admin/', 'administrator/', 'admin1/', 'admin2/', 'admin3/', 'admin4/', 'admin5/',
-    'usuarios/', 'usuario/', 'moderator/', 'webadmin/', 'adminarea/', 'bb-admin/',
-    'adminLogin/', 'admin_login/', 'panel-administracion/', 'instadmin/',
-    'memberadmin/', 'administratorlogin/', 'adm/', 'admin/account.php',
-    'admin/index.php', 'admin/login.php', 'admin/admin.php',
-    'admin_area/', 'admin_control/', 'admincp/', 'adminpanel/', 'admin1.html',
-    'admin2.html', 'admin3.html', 'admin4.html', 'admin5.html',
-    'admin/account.html', 'admin/index.html', 'admin/login.html', 'admin/admin.html',
-    'admin/home.html', 'admin/control.html', 'admin/cp', 'cp', 'administrator/',
-    'login.php', 'modelsearch/login.php', 'moderator.php', 'moderator/login.php',
-    'moderator/admin.php', 'control.php', 'account.php', 'admin/account.html',
-    'adminpanel.html', 'webadmin.html', 'webadmin/index.html', 'webadmin/admin.html',
-    'webadmin/login.html', 'admin/admin_login.html', 'admin_login.html',
-    'panel-administracion/login.html', 'pages/admin/admin-login.html',
-    'admin/admin-login.html', 'admin-login.html', 'bb-admin/index.html',
-    'bb-admin/login.html', 'bb-admin/admin.html', 'admin/home.html',
-    'login.html', 'modelsearch/login.html', 'moderator.html',
-    'moderator/login.html', 'moderator/admin.html', 'user.html',
-    'account.html', 'control.html', 'admincontrol.html', 'admin_login.html',
-    'panel-administracion/admin.html', 'panel-administracion/login.html',
-    'admin/cp.php', 'cp.php', 'administrator/account.php', 'administrator.php',
-    'nsw/admin/login.php', 'webadmin/login.php', 'admin/admin_login.php',
-    'admin_login.php', 'administrator/account.php', 'administrator/login.php',
-    'administrator/control.php', 'adminarea/admin.html', 'adminarea/login.html',
-    'webadmin/admin.php', 'webadmin/index.php'
-]
+# --- Configuration ---
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+SUCCESS_CODES = [200, 301, 302, 403]  # Include redirects and forbidden as possible hits
 
-# Hacker ASCII Art (Banner)
-BANNER = r"""
-  ___ _   _ ____  ____    _  _____ ___ ___  _   _ 
- / _ \ | | / ___||  _ \  / \|_   _|_ _/ _ \| \ | |
-| | | | | | \___ \| | | |/ _ \ | |  | | | | |  \| |
-| |_| | |_| |___) | |_| / ___ \| |  | | |_| | |\  |
- \__\_\\___/|____/|____/_/   \_\_| |___\___/|_| \_|
-                                                   
-       [+] DarkBoss1BD - Admin Panel Finder [+]
-       [+] Advanced Tool with Hacker Style UI [+]
-"""
+# Hacker-style animation characters
+ANIMATION_CHARS = ["█", "▓", "▒", "░", "■", "□", "●", "○", "◆", "◇", "▲", "▼"]
 
-# Typing effect for animation
-def animate_text(widget, text, delay=50):
-    widget.config(state=tk.NORMAL)
-    widget.delete(1.0, tk.END)
-    def type_char(i=0):
-        if i < len(text):
-            widget.insert(tk.END, text[i])
-            widget.see(tk.END)
-            widget.after(delay, type_char, i + 1)
-        else:
-            widget.config(state=tk.DISABLED)
-    type_char()
-
-# Main App Class
+# --- Main App Class ---
 class AdminPanelFinder:
     def __init__(self, root):
         self.root = root
-        self.root.title("DarkBoss1BD - Admin Panel Finder")
-        self.root.geometry("800x600")
+        self.root.title("🔐 darkboss1bd - Admin Panel Finder 🔍")
+        self.root.geometry("800x700")
         self.root.resizable(False, False)
-        self.root.configure(bg="#0e0e0e")
+        self.root.config(bg="#121212")
 
-        # Style
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("TLabel", background="#0e0e0e", foreground="#00ff00", font=("Consolas", 10))
-        style.configure("TButton", background="#1a1a1a", foreground="#00ff00", font=("Consolas", 10))
-        style.map("TButton", background=[('active', '#2a2a2a')])
+        self.wordlist_path = tk.StringVar()
+        self.proxy_path = tk.StringVar()
+        self.target_url = tk.StringVar()
+        self.use_proxy = tk.BooleanVar()
+        self.threads = tk.IntVar(value=10)
+        self.found_admins = []
 
-        # Banner Label
-        self.banner_text = tk.Text(root, bg="#0e0e0e", fg="#00ff00", font=("Courier", 10), wrap=tk.NONE, height=12, relief="flat")
-        self.banner_text.pack(pady=10)
-        animate_text(self.banner_text, BANNER, delay=30)
+        self.is_scanning = False
+        self.animation_running = False
+        self.animation_label = None
 
-        # URL Input
-        self.url_label = ttk.Label(root, text="Enter Website URL (e.g., http://example.com):")
-        self.url_label.pack(pady=5)
+        self.create_widgets()
+        self.start_animation()
 
-        self.url_entry = ttk.Entry(root, width=60, font=("Consolas", 10))
-        self.url_entry.pack(pady=5)
+    def create_widgets(self):
+        # === BANNER ===
+        banner_frame = tk.Frame(self.root, bg="#000000", height=80)
+        banner_frame.pack(fill="x", pady=10)
+        banner_frame.pack_propagate(False)
 
-        # Start Button
-        self.start_btn = ttk.Button(root, text="🔍 Start Scan", command=self.start_scan)
-        self.start_btn.pack(pady=10)
+        banner_label = tk.Label(
+            banner_frame,
+            text="▂▃▄▅▆▇█ 𝓓𝓐𝓡𝓚𝓑𝓞𝓢𝓢𝟏𝓑𝓓 █▇▆▅▄▃▂\nAdmin Panel Finder Tool",
+            font=("Courier New", 14, "bold"),
+            fg="#00ff00",
+            bg="#000000",
+            justify="center"
+        )
+        banner_label.pack(expand=True)
 
-        # Progress Bar
-        self.progress = ttk.Progressbar(root, orient="horizontal", length=500, mode="determinate")
-        self.progress.pack(pady=10)
+        # === INPUT FRAME ===
+        input_frame = tk.Frame(self.root, bg="#1e1e1e", padx=20, pady=20)
+        input_frame.pack(fill="x", padx=20, pady=10)
 
-        # Result Text Box
-        self.result_frame = tk.Frame(root, bg="#0e0e0e")
-        self.result_frame.pack(pady=10, fill=tk.BOTH, expand=True)
+        # Target URL
+        tk.Label(input_frame, text="🌐 Target Website (e.g., https://example.com):", bg="#1e1e1e", fg="white", font=("Arial", 10)).grid(row=0, column=0, sticky="w", pady=5)
+        tk.Entry(input_frame, textvariable=self.target_url, width=50, font=("Arial", 10)).grid(row=1, column=0, columnspan=2, pady=5, sticky="ew")
 
-        self.result_text = tk.Text(self.result_frame, bg="#111", fg="#00ff00", font=("Consolas", 10), wrap=tk.WORD, state=tk.DISABLED)
-        self.scrollbar = tk.Scrollbar(self.result_frame, command=self.result_text.yview, bg="#333")
-        self.result_text.config(yscrollcommand=self.scrollbar.set)
-        self.result_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Wordlist
+        tk.Label(input_frame, text="📂 Wordlist File:", bg="#1e1e1e", fg="white", font=("Arial", 10)).grid(row=2, column=0, sticky="w", pady=5)
+        tk.Entry(input_frame, textvariable=self.wordlist_path, width=40, state="readonly", font=("Arial", 10)).grid(row=3, column=0, padx=(0, 5), sticky="ew")
+        tk.Button(input_frame, text="Browse", command=self.load_wordlist, bg="#006400", fg="white", font=("Arial", 9)).grid(row=3, column=1, sticky="w")
 
-        # Status Label
-        self.status_label = ttk.Label(root, text="Ready to scan...", font=("Consolas", 9))
-        self.status_label.pack(pady=5)
+        # Proxy (Optional)
+        tk.Checkbutton(input_frame, text="Use Proxy?", variable=self.use_proxy, bg="#1e1e1e", fg="cyan", selectcolor="black", font=("Arial", 10)).grid(row=4, column=0, sticky="w", pady=5)
+        tk.Entry(input_frame, textvariable=self.proxy_path, width=40, state="readonly", font=("Arial", 10)).grid(row=5, column=0, padx=(0, 5), pady=5, sticky="ew")
+        tk.Button(input_frame, text="Browse", command=self.load_proxy, bg="#4169e1", fg="white", font=("Arial", 9)).grid(row=5, column=1, sticky="w")
 
-    def start_scan(self):
-        url = self.url_entry.get().strip()
-        if not url:
-            messagebox.showwarning("Input Error", "Please enter a valid URL!")
+        # Threads
+        tk.Label(input_frame, text="🧵 Threads:", bg="#1e1e1e", fg="white", font=("Arial", 10)).grid(row=6, column=0, sticky="w", pady=5)
+        tk.Spinbox(input_frame, from_=1, to=50, textvariable=self.threads, width=10, font=("Arial", 10)).grid(row=6, column=1, sticky="w")
+
+        input_frame.grid_columnconfigure(0, weight=1)
+
+        # === BUTTONS ===
+        btn_frame = tk.Frame(self.root, bg="#121212")
+        btn_frame.pack(pady=10)
+
+        self.start_btn = tk.Button(btn_frame, text="🚀 START SCAN", command=self.start_scan, bg="#00b300", fg="white", font=("Arial", 12, "bold"), width=15)
+        self.start_btn.pack(side="left", padx=10)
+
+        self.stop_btn = tk.Button(btn_frame, text="🛑 STOP", command=self.stop_scan, bg="#cc0000", fg="white", font=("Arial", 12, "bold"), width=15, state="disabled")
+        self.stop_btn.pack(side="left", padx=10)
+
+        # === ANIMATION LABEL ===
+        self.animation_label = tk.Label(self.root, text="", font=("Courier", 10), fg="#00ff00", bg="#121212")
+        self.animation_label.pack(pady=5)
+
+        # === RESULTS FRAME ===
+        result_frame = tk.Frame(self.root, bg="#1e1e1e")
+        result_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+        tk.Label(result_frame, text="🔍 Scan Results:", bg="#1e1e1e", fg="white", font=("Arial", 11, "bold")).pack(anchor="w")
+
+        self.result_text = tk.Text(result_frame, bg="#0f0f0f", fg="#33ff33", font=("Consolas", 10), state="disabled")
+        scrollbar = ttk.Scrollbar(result_frame, orient="vertical", command=self.result_text.yview)
+        self.result_text.configure(yscrollcommand=scrollbar.set)
+        self.result_text.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    def start_animation(self):
+        self.animation_running = True
+
+        def animate():
+            while self.animation_running:
+                text = "".join(random.choices(ANIMATION_CHARS, k=60))
+                self.animation_label.config(text=text)
+                time.sleep(0.2)
+
+        thread = threading.Thread(target=animate, daemon=True)
+        thread.start()
+
+    def stop_animation(self):
+        self.animation_running = False
+        self.animation_label.config(text="Scan completed or stopped.")
+
+    def load_wordlist(self):
+        path = filedialog.askopenfilename(title="Select Wordlist", filetypes=[("Text Files", "*.txt")])
+        if path:
+            self.wordlist_path.set(path)
+            messagebox.showinfo("Success", f"Wordlist loaded: {os.path.basename(path)}")
+
+    def load_proxy(self):
+        path = filedialog.askopenfilename(title="Select Proxy File", filetypes=[("Text Files", "*.txt")])
+        if path:
+            self.proxy_path.set(path)
+            messagebox.showinfo("Proxy", f"Proxy file loaded: {os.path.basename(path)}")
+
+    def log_result(self, message, color="white"):
+        self.result_text.config(state="normal")
+        self.result_text.insert("end", message + "\n")
+        self.result_text.see("end")
+        self.result_text.config(state="disabled")
+
+    def get_proxy(self):
+        if not self.use_proxy.get() or not self.proxy_path.get():
+            return None
+        try:
+            with open(self.proxy_path.get(), 'r') as f:
+                proxies = [line.strip() for line in f if line.strip()]
+            if proxies:
+                proxy = random.choice(proxies)
+                return {"http": f"http://{proxy}", "https": f"http://{proxy}"}
+        except Exception as e:
+            self.log_result(f"[!] Proxy Error: {e}", "red")
+        return None
+
+    def check_path(self, path):
+        if self.is_scanning is False:
             return
 
-        if not url.startswith("http://") and not url.startswith("https://"):
-            url = "http://" + url
+        url = f"{self.target_url.get().rstrip('/')}/{path.strip('/')}"
+        headers = {"User-Agent": USER_AGENT}
 
-        self.url_entry.delete(0, tk.END)
-        self.url_entry.insert(0, url)
+        try:
+            proxy = self.get_proxy() if self.use_proxy.get() else None
+            response = requests.get(url, headers=headers, proxies=proxy, timeout=10, allow_redirects=True)
 
-        # Clear previous results
-        self.result_text.config(state=tk.NORMAL)
-        self.result_text.delete(1.0, tk.END)
-        self.result_text.config(state=tk.DISABLED)
+            if response.status_code in SUCCESS_CODES:
+                result = f"[+] FOUND: {url} | Status: {response.status_code}"
+                self.found_admins.append(url)
+                self.log_result(result, "green")
+            else:
+                self.log_result(f"[-] {url} -> {response.status_code}")
 
-        # Run scan in a separate thread
-        self.scan_thread = threading.Thread(target=self.scan_admin_panel, args=(url,), daemon=True)
-        self.scan_thread.start()
+        except requests.exceptions.RequestException as e:
+            if self.is_scanning:
+                self.log_result(f"[!] Failed: {url} | {str(e)[:50]}...")
 
-    def scan_admin_panel(self, base_url):
-        self.root.after(0, lambda: self.update_status("Starting scan..."))
-        found_panels = []
-        total = len(COMMON_ADMIN_PATHS)
-        checked = 0
+    def start_scan(self):
+        if self.is_scanning:
+            return
 
-        for path in COMMON_ADMIN_PATHS:
-            try:
-                url = f"{base_url.rstrip('/')}/{path}"
-                response = requests.get(url, timeout=5, headers={"User-Agent": "DarkBoss1BD Scanner"})
-                if response.status_code == 200:
-                    found_panels.append(url)
-                    self.root.after(0, lambda u=url: self.append_result(f"[+] FOUND: {u}\n"))
-                elif response.status_code == 403:
-                    self.root.after(0, lambda u=url: self.append_result(f"[~] Forbidden: {u}\n"))
-            except requests.exceptions.RequestException:
-                pass  # Ignore connection errors
-            except Exception as e:
-                print(e)
+        target = self.target_url.get().strip()
+        wordlist = self.wordlist_path.get()
 
-            checked += 1
-            progress = (checked / total) * 100
-            self.root.after(0, lambda p=progress: self.progress['value'] = p)
-            time.sleep(0.05)  # Simulate realistic delay
+        if not target or not wordlist:
+            messagebox.showerror("Error", "Target URL and Wordlist are required!")
+            return
 
-        # Final Result
-        self.root.after(0, lambda: self.update_status(f"Scan complete! Found {len(found_panels)} admin panels."))
-        if not found_panels:
-            self.append_result("[!] No admin panels found.\n")
+        if not os.path.exists(wordlist):
+            messagebox.showerror("Error", "Wordlist file not found!")
+            return
 
-    def append_result(self, text):
-        self.result_text.config(state=tk.NORMAL)
-        self.result_text.insert(tk.END, text)
-        self.result_text.see(tk.END)
-        self.result_text.config(state=tk.DISABLED)
+        try:
+            with open(wordlist, 'r', encoding='utf-8', errors='ignore') as f:
+                paths = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        except Exception as e:
+            messagebox.showerror("Error", f"Cannot read wordlist: {e}")
+            return
 
-    def update_status(self, text):
-        self.status_label.config(text=text)
+        if not paths:
+            messagebox.showerror("Error", "Wordlist is empty!")
+            return
 
-# Run the app
+        # Validate URL
+        if not target.startswith(('http://', 'https://')):
+            messagebox.showerror("Error", "URL must start with http:// or https://")
+            return
+
+        # Start scanning
+        self.is_scanning = True
+        self.found_admins = []
+        self.start_btn.config(state="disabled")
+        self.stop_btn.config(state="normal")
+        self.log_result(f"🚀 Starting scan on: {target}")
+        self.log_result(f"📁 Testing {len(paths)} paths with {self.threads.get()} threads...\n")
+
+        def run_scan():
+            with ThreadPoolExecutor(max_workers=self.threads.get()) as executor:
+                executor.map(self.check_path, paths)
+
+            self.finish_scan()
+
+        thread = threading.Thread(target=run_scan, daemon=True)
+        thread.start()
+
+    def finish_scan(self):
+        self.is_scanning = False
+        self.stop_animation()
+        self.start_btn.config(state="normal")
+        self.stop_btn.config(state="disabled")
+        final_msg = f"\n✅ Scan Complete! Found {len(self.found_admins)} admin panel(s)."
+        self.log_result(final_msg, "yellow")
+        if self.found_admins:
+            for url in self.found_admins:
+                self.log_result(f"🎯 {url}", "green")
+
+    def stop_scan(self):
+        if self.is_scanning:
+            self.is_scanning = False
+            self.stop_animation()
+            self.log_result("\n🛑 Scan stopped by user.", "red")
+            self.start_btn.config(state="normal")
+            self.stop_btn.config(state="disabled")
+
+    def on_closing(self):
+        self.stop_scan()
+        self.root.destroy()
+
+
+# --- Main Execution ---
 if __name__ == "__main__":
     root = tk.Tk()
     app = AdminPanelFinder(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
