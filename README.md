@@ -2,7 +2,7 @@
 
 ```
 bash
-git clone https://github.com/darkboss1bd/advanced_admin_finder.git
-cd advanced_admin_finder
-python advanced_admin_finder.py
+git clone https://github.com/darkboss1bd/admin_finder.git
+cd admin_finder
+python admin_finder.py
 ```
